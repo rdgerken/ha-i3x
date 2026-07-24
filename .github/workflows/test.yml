@@ -13,3 +13,24 @@ jobs:
           python-version: "3.13"
       - run: pip install -r requirements_test.txt
       - run: pytest tests/ -q
+  mock-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: cesmii/i3X
+          ref: "1.0"
+          path: i3x-spec
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pip install -r requirements_test.txt
+      - name: Client interop vs the spec's reference mock server
+        run: |
+          node i3x-spec/conformance-tests/mock/server.js &
+          sleep 2
+          I3X_MOCK_URL=http://127.0.0.1:8331/v1 pytest tests/test_mock_e2e.py -q

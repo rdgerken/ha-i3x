@@ -35,6 +35,39 @@ DEFAULT_SERVER_NAME = "Home Assistant i3X"
 DEFAULT_LOCAL_ONLY = True
 DEFAULT_SUBSCRIPTION_TTL = 600  # seconds without sync/stream before expiry
 
+# --- Client (config entry data) ---
+CONF_BASE_URL = "base_url"
+CONF_AUTH_TYPE = "auth_type"
+CONF_TOKEN = "token"
+CONF_USERNAME = "username"
+CONF_PASSWORD = "password"
+CONF_HEADER_NAME = "header_name"
+CONF_HEADER_VALUE = "header_value"
+CONF_VERIFY_SSL = "verify_ssl"
+
+AUTH_NONE = "none"
+AUTH_BEARER = "bearer"
+AUTH_BASIC = "basic"
+AUTH_HEADER = "header"
+
+# --- Client options ---
+CONF_LIVE_ELEMENT_IDS = "live_element_ids"
+CONF_IMPORT_ELEMENT_IDS = "import_element_ids"
+CONF_IMPORT_COUNTER_ELEMENT_IDS = "import_counter_element_ids"
+
+DEFAULT_LIVE_SCAN_INTERVAL_SECONDS = 30
+DEFAULT_IMPORT_INTERVAL_MINUTES = 30
+IMPORT_MAX_LOOKBACK_HOURS = 24 * 7  # cap first import / catch-up window
+SYNC_POLL_INTERVAL_SECONDS = 10  # /sync polling cadence when SSE is unavailable
+
+# --- Services ---
+SERVICE_WRITE = "write"
+ATTR_ELEMENT_ID = "element_id"
+ATTR_VALUE = "value"
+ATTR_QUALITY = "quality"
+ATTR_TIMESTAMP = "timestamp"
+ATTR_CONFIG_ENTRY_ID = "config_entry_id"
+
 # --- Server limits (resource-exhaustion guards) ---
 MAX_BULK_IDS = 500  # per-request cap on elementIds/updates lists
 MAX_SUBSCRIPTIONS_PER_CLIENT = 20

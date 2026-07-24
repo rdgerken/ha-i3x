@@ -1,6 +1,9 @@
 # i3X for Home Assistant
 
-Expose Home Assistant as a **[CESMII i3X 1.0](https://github.com/cesmii/i3X)** server — the open, vendor-agnostic API for contextualized information interoperability. Any i3X client (the i3X Explorer, the official Python client, the i3X MCP server, AI applications, historians) can browse your home as a typed, hierarchical address space and read live values, history, and subscriptions — using the same API it would use against an industrial manufacturing platform.
+Home Assistant speaks **[CESMII i3X 1.0](https://github.com/cesmii/i3X)** — the open, vendor-agnostic API for contextualized information interoperability — in both directions:
+
+- **Server**: any i3X client (the i3X Explorer, the official Python client, the i3X MCP server, AI applications, historians) can browse your home as a typed, hierarchical address space and read live values, history, and subscriptions — using the same API it would use against an industrial manufacturing platform.
+- **Client**: connect HA to external i3X servers and surface their objects as sensor entities (live via SSE or sync polling), import their history into long-term statistics, and write values back with the `i3x.write` service.
 
 **Conformance: `Full 1.0 Compliance`** 🎉 — every MUST *and* every declared optional feature of the official [i3X Conformance Test Suite](https://github.com/cesmii/i3X/tree/1.0/conformance-tests) passes, with a rich structured type system (verdict from `i3x-test` v1.0.0, re-verified in CI on every push).
 
@@ -23,6 +26,16 @@ Expose Home Assistant as a **[CESMII i3X 1.0](https://github.com/cesmii/i3X)** s
 - **Subscriptions** — create/register/sync with monotonic sequence numbers, ack semantics (`lastSequenceNumber`, `-1` clears), poll-style snapshot capture, queue-overflow 206s, and mandatory idle-TTL expiry. Fed live from HA's event bus.
 - **SSE streaming** — `POST /subscriptions/stream` pushes state changes as they happen (single stream per subscription with clean takeover, keep-alive heartbeats for proxies).
 - **Writes** — `PUT /objects/value` maps to Home Assistant service calls per domain (switch/light/number/select/cover/climate/…). Two tiers: *idempotent echo writes* (writing a value that equals the current one) always succeed as no-ops; *value-changing* writes require the write toggle plus a per-entity allowlist. `PUT /objects/history` accepts idempotent replacements only — HA's recorder is append-only.
+
+## The client half
+
+Add a second config entry ("Connect to an i3X server") pointing at any i3X 1.0 endpoint — Bearer token, HTTP Basic, custom header, or no auth. Then, via the entry's options:
+
+- **Live sensors** — listed remote elementIds become sensor entities under one service device. Updates arrive by SSE push when the server declares `subscribe.stream`, else by `/sync` polling with sequence-number acks; expired subscriptions (404) are recreated automatically.
+- **Statistics import** — remote history becomes native long-term statistics (`i3x:*`): hourly mean/min/max for measurements, meter-reset-aware state+sum for counters, resuming from the last stored row so re-imports never double-count.
+- **`i3x.write`** — write a VQT to any remote object from automations/scripts (refused cleanly if the remote doesn't declare `update.current`).
+
+Interop is CI-tested against the conformance suite's reference mock server and verified against CESMII's public demo at `api.i3x.dev`.
 
 ## Security
 
@@ -86,7 +99,7 @@ The write tests are non-destructive (they echo current values back), so they are
 - [x] SSE streaming (`POST /subscriptions/stream`) — v0.2
 - [x] Writes mapped to service calls, default-off behind an entity allowlist — v0.2
 - [x] **Full 1.0 Compliance** verdict — v0.2
-- [ ] i3X **client** half: consume external i3X servers into HA entities and long-term statistics
+- [x] i3X **client** half: consume external i3X servers into HA entities and long-term statistics — v0.3
 - [ ] Long-term statistics as a deep-history source
 
 ## Disclaimer

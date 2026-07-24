@@ -2,6 +2,14 @@
   "config": {
     "step": {
       "user": {
+        "title": "i3X",
+        "description": "Expose Home Assistant as an i3X server, or connect to an external i3X server.",
+        "menu_options": {
+          "server": "Expose Home Assistant as an i3X server",
+          "client": "Connect to an i3X server"
+        }
+      },
+      "server": {
         "title": "i3X Server",
         "description": "Expose Home Assistant as a CESMII i3X 1.0 server at /api/i3x/v1. All endpoints except /info require a Home Assistant access token.",
         "data": {
@@ -14,16 +22,36 @@
           "write_enabled": "Allow value-changing writes (echo/no-op writes are always accepted)",
           "write_entity_globs": "Writable entity globs (allowlist for value-changing writes)"
         }
+      },
+      "client": {
+        "title": "i3X Client",
+        "description": "Connect to an external CESMII i3X 1.0 server. Enter the versioned base URL, e.g. https://host/i3x/v1.",
+        "data": {
+          "base_url": "i3X base URL (including /v1)",
+          "auth_type": "Authentication",
+          "token": "Bearer token",
+          "username": "Username (HTTP Basic)",
+          "password": "Password (HTTP Basic)",
+          "header_name": "Custom header name",
+          "header_value": "Custom header value",
+          "verify_ssl": "Verify SSL certificate"
+        }
       }
     },
+    "error": {
+      "cannot_connect": "Could not reach the i3X server. Check the base URL.",
+      "invalid_auth": "The i3X server rejected the credentials.",
+      "auth_incomplete": "Fill in the credentials matching the chosen authentication type.",
+      "unknown": "Unexpected error — check the logs."
+    },
     "abort": {
-      "already_configured": "The i3X server is already configured. Adjust it via the integration's options."
+      "already_configured": "This i3X server or connection is already configured. Adjust it via the integration's options."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "i3X Server options",
+        "title": "i3X options",
         "data": {
           "server_name": "Server name (shown on the unauthenticated /info endpoint)",
           "local_only": "Only accept requests from the local network",
@@ -32,7 +60,48 @@
           "exclude_entity_globs": "Exclude entity globs",
           "subscription_ttl": "Subscription idle timeout (seconds)",
           "write_enabled": "Allow value-changing writes (echo/no-op writes are always accepted)",
-          "write_entity_globs": "Writable entity globs (allowlist for value-changing writes)"
+          "write_entity_globs": "Writable entity globs (allowlist for value-changing writes)",
+          "live_element_ids": "Remote elementIds to surface as sensors",
+          "import_element_ids": "Remote elementIds to import as measurement statistics",
+          "import_counter_element_ids": "Remote elementIds to import as counter statistics"
+        }
+      }
+    }
+  },
+  "selector": {
+    "auth_type": {
+      "options": {
+        "none": "None",
+        "bearer": "Bearer token",
+        "basic": "HTTP Basic",
+        "header": "Custom header"
+      }
+    }
+  },
+  "services": {
+    "write": {
+      "name": "Write value",
+      "description": "Writes a value to an object on a connected i3X server.",
+      "fields": {
+        "element_id": {
+          "name": "Element ID",
+          "description": "The remote object's elementId."
+        },
+        "value": {
+          "name": "Value",
+          "description": "The value to write (scalar or structured object)."
+        },
+        "quality": {
+          "name": "Quality",
+          "description": "VQT quality; defaults to Good on the server."
+        },
+        "timestamp": {
+          "name": "Timestamp",
+          "description": "VQT timestamp; defaults to the server's time."
+        },
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Which i3X client connection to write through (defaults to the first loaded one)."
         }
       }
     }
