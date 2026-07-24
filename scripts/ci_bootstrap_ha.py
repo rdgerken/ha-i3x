@@ -5,12 +5,16 @@ Stdlib only. Performs non-interactive onboarding via the REST API, creates the
 i3X server config entry through the config-entries flow API, and prints a
 bearer access token (valid ~30 minutes — plenty for a conformance run).
 
-Usage: ci_bootstrap_ha.py [base_url]   (default http://127.0.0.1:8123)
+Usage: ci_bootstrap_ha.py [base_url] [phase]
+  base_url  default http://127.0.0.1:8123
+  phase     all (default) | onboard (onboard + print token, no entry)
+            | entry (create the i3X entry; token from $HA_TOKEN)
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -18,6 +22,7 @@ import urllib.parse
 import urllib.request
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8123"
+PHASE = sys.argv[2] if len(sys.argv) > 2 else "all"
 CLIENT_ID = f"{BASE}/"
 
 
@@ -51,7 +56,19 @@ def wait_for_ha(timeout=300):
     raise SystemExit("Home Assistant did not come up in time")
 
 
-def main() -> None:
+def wait_for_api(token: str, timeout=300) -> None:
+    """Wait until the authenticated core API responds (post-restart)."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            request("GET", "/api/", token=token)
+            return
+        except (urllib.error.URLError, ConnectionError, OSError):
+            time.sleep(2)
+    raise SystemExit("Home Assistant API did not come back in time")
+
+
+def onboard() -> str:
     wait_for_ha()
     print("HA is up; onboarding…", file=sys.stderr)
 
@@ -92,8 +109,13 @@ def main() -> None:
             request("POST", path, payload, token=token)
         except urllib.error.HTTPError as err:
             print(f"onboarding step {path}: HTTP {err.code} (skipped)", file=sys.stderr)
-    print("Onboarding complete; creating i3X server entry…", file=sys.stderr)
+    print("Onboarding complete", file=sys.stderr)
+    return token
 
+
+def create_entry(token: str) -> None:
+    wait_for_api(token)
+    print("Creating i3X server entry…", file=sys.stderr)
     # The config component registers its HTTP routes asynchronously after
     # onboarding — retry until the flow API is up.
     flow = None
@@ -132,7 +154,20 @@ def main() -> None:
     if result.get("type") != "create_entry":
         raise SystemExit(f"Config entry creation failed: {result}")
     print("i3X server entry created", file=sys.stderr)
-    print(token)
+
+
+def main() -> None:
+    if PHASE == "onboard":
+        print(onboard())
+    elif PHASE == "entry":
+        token = os.environ.get("HA_TOKEN")
+        if not token:
+            raise SystemExit("entry phase needs $HA_TOKEN")
+        create_entry(token)
+    else:
+        token = onboard()
+        create_entry(token)
+        print(token)
 
 
 if __name__ == "__main__":

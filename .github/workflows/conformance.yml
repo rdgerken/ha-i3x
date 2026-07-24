@@ -50,13 +50,25 @@ jobs:
           EOF
       - name: Start Home Assistant
         run: |
+          ls -la ci-ha/custom_components/i3x/manifest.json
           hass -c ci-ha > hass.log 2>&1 &
           echo $! > hass.pid
-      - name: Bootstrap (onboarding, token, i3X entry)
+      - name: Onboard and mint token
         run: |
-          TOKEN=$(python scripts/ci_bootstrap_ha.py http://127.0.0.1:8123)
+          TOKEN=$(python scripts/ci_bootstrap_ha.py http://127.0.0.1:8123 onboard)
           echo "::add-mask::$TOKEN"
           echo "HA_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+      - name: Restart Home Assistant
+        # A restart after onboarding guarantees the custom-components scan ran
+        # on an onboarded instance — the same flow a real HACS install follows.
+        run: |
+          kill "$(cat hass.pid)" || true
+          for _ in $(seq 1 30); do kill -0 "$(cat hass.pid)" 2>/dev/null || break; sleep 1; done
+          mv hass.log hass-firstboot.log
+          hass -c ci-ha > hass.log 2>&1 &
+          echo $! > hass.pid
+      - name: Create i3X server entry
+        run: python scripts/ci_bootstrap_ha.py http://127.0.0.1:8123 entry
       - name: Run i3X conformance suite
         run: |
           node i3x-spec/conformance-tests/bin/i3x-test.js run \
@@ -68,6 +80,9 @@ jobs:
         with:
           name: conformance-report
           path: report.json
-      - name: Show HA log on failure
+      - name: Show HA logs on failure
         if: failure()
-        run: tail -100 hass.log
+        run: |
+          echo "=== first boot ==="; grep -iE "custom|i3x|error|recovery|safe" hass-firstboot.log | head -40 || true
+          echo "=== second boot ==="; grep -iE "custom|i3x|error|recovery|safe" hass.log | head -60 || true
+          echo "=== tail ==="; tail -60 hass.log
