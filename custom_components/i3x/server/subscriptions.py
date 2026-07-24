@@ -32,7 +32,6 @@ from ..const import (
     SUBSCRIPTION_JANITOR_INTERVAL,
 )
 from .http_util import ProblemError, item_not_found, item_ok, item_problem
-from .schemas import KIND_TODO
 from .values import no_data_vqt, state_to_vqt
 
 
@@ -136,14 +135,17 @@ class SubscriptionManager:
         obj = snapshot.objects.get(entity_id)
         if obj is None or obj.typing is None:
             return
-        if obj.typing.kind == KIND_TODO:
-            # Items live behind a service call: push the count with the
-            # cached items now, then follow up once fresh items arrive.
-            cached = self._engine.todo_cache.peek(entity_id)
-            vqt = state_to_vqt(new_state, obj.typing, todo_items=cached)
+        if obj.typing.service_key:
+            # The payload (items/events/forecast) lives behind a service
+            # call: push the state with the cached payload now, then follow
+            # up once a fresh payload arrives.
+            cached = self._engine.service_cache.peek(entity_id)
+            vqt = state_to_vqt(new_state, obj.typing, service_data=cached)
             self._fan_out(entity_id, vqt)
             self._hass.async_create_task(
-                self._async_todo_follow_up(entity_id, new_state, obj.typing, cached)
+                self._async_service_follow_up(
+                    entity_id, new_state, obj.typing, cached
+                )
             )
             return
         self._fan_out(entity_id, state_to_vqt(new_state, obj.typing))
@@ -155,13 +157,13 @@ class SubscriptionManager:
             if sub is not None:
                 self._enqueue(sub, [entry])
 
-    async def _async_todo_follow_up(
+    async def _async_service_follow_up(
         self, entity_id: str, state, typing, cached: list | None
     ) -> None:
-        fresh = await self._engine.todo_cache.async_get(entity_id, state)
+        fresh = await self._engine.service_cache.async_get(entity_id, state)
         if fresh != cached:
             self._fan_out(
-                entity_id, state_to_vqt(state, typing, todo_items=fresh)
+                entity_id, state_to_vqt(state, typing, service_data=fresh)
             )
 
     def _enqueue(self, sub: Subscription, updates: list[dict]) -> None:
@@ -186,11 +188,11 @@ class SubscriptionManager:
                 state = self._hass.states.get(obj.entity_id)
                 if state is None:
                     continue
-                if obj.typing.kind == KIND_TODO:
+                if obj.typing.service_key:
                     vqt = state_to_vqt(
                         state,
                         obj.typing,
-                        todo_items=self._engine.todo_cache.peek(obj.entity_id),
+                        service_data=self._engine.service_cache.peek(obj.entity_id),
                     )
                 else:
                     vqt = state_to_vqt(state, obj.typing)

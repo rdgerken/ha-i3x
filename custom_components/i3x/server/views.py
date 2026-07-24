@@ -300,11 +300,11 @@ class I3xObjectsValueView(_I3xBaseView):
         if obj.entity_id is not None and obj.typing is not None:
             state = self.hass.states.get(obj.entity_id)
             if state is not None:
-                from .schemas import KIND_TODO
-
-                if obj.typing.kind == KIND_TODO:
-                    items = await engine.todo_cache.async_get(obj.entity_id, state)
-                    return state_to_vqt(state, obj.typing, todo_items=items)
+                if obj.typing.service_key:
+                    payload = await engine.service_cache.async_get(
+                        obj.entity_id, state
+                    )
+                    return state_to_vqt(state, obj.typing, service_data=payload)
                 return state_to_vqt(state, obj.typing)
         return no_data_vqt()
 
@@ -313,13 +313,11 @@ class I3xObjectsValueView(_I3xBaseView):
         if obj.entity_id is not None and obj.typing is not None:
             state = self.hass.states.get(obj.entity_id)
             if state is not None:
-                from .schemas import KIND_TODO
-
-                if obj.typing.kind == KIND_TODO:
+                if obj.typing.service_key:
                     return state_to_vqt(
                         state,
                         obj.typing,
-                        todo_items=engine.todo_cache.peek(obj.entity_id),
+                        service_data=engine.service_cache.peek(obj.entity_id),
                     )
                 return state_to_vqt(state, obj.typing)
         return no_data_vqt()
@@ -336,7 +334,7 @@ class I3xObjectsValueView(_I3xBaseView):
                 updates,
                 engine.write_enabled,
                 engine.write_filter,
-                engine.todo_cache,
+                engine.service_cache,
             )
             return self.json(bulk_body(results))
 

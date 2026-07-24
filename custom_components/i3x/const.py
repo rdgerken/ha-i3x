@@ -78,6 +78,11 @@ MAX_HISTORY_ROWS = 100_000  # total rows per history request -> 206 if truncated
 SUBSCRIPTION_JANITOR_INTERVAL = 60  # seconds
 
 # SSE streaming
+# Service-response entity data (todo items, calendar events, weather
+# forecasts): refetched when the entity state changes or this TTL lapses,
+# since list edits and forecast refreshes do not always change the state.
+SERVICE_DATA_TTL_SECONDS = 300
+
 MAX_SSE_STREAMS = 10  # concurrent streams across all subscriptions -> 503 beyond
 SSE_HEARTBEAT_SECONDS = 15  # keep-alive comment cadence (survives proxy idle timeouts)
 

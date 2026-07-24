@@ -160,6 +160,10 @@ def test_structured_values_conform_to_their_schemas() -> None:
         "mode": "auto",
         "operation_mode": "heat_pump",
         "changed_by": "Ryan",
+        "message": "Birthday party",
+        "start_time": "2026-07-24 18:00:00",
+        "end_time": "2026-07-24 21:00:00",
+        "all_day": False,
     }
     domain_states = {
         "light": "on",
@@ -172,6 +176,8 @@ def test_structured_values_conform_to_their_schemas() -> None:
         "humidifier": "on",
         "water_heater": "heat_pump",
         "alarm_control_panel": "armed_home",
+        "todo": "2",
+        "calendar": "on",
     }
     for domain in STRUCTURED_DOMAINS:
         typing = classify_entity(domain, None, None, domain_states[domain])

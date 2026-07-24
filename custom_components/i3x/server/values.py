@@ -24,7 +24,6 @@ from .schemas import (
     KIND_NUMERIC,
     KIND_STRING,
     KIND_STRUCTURED,
-    KIND_TODO,
     EntityTyping,
 )
 
@@ -58,13 +57,15 @@ def _coerce_attr(value, json_type: str):
     return None
 
 
-def state_to_value(state: State, typing: EntityTyping, todo_items: list | None = None):
+def state_to_value(
+    state: State, typing: EntityTyping, service_data: list | None = None
+):
     """Convert an HA state to (value, quality) per the entity's typing.
 
     The timestamp is handled separately (event time for live values,
-    state.last_updated for reads). ``todo_items`` carries the list items for
-    todo entities when the caller has them (they live behind a service call,
-    not in the state machine); None is honest for paths without item access,
+    state.last_updated for reads). ``service_data`` carries the payload for
+    service-backed domains (todo items, calendar events, weather forecasts)
+    when the caller has it; None is honest for paths without service access,
     such as history.
     """
     raw = state.state
@@ -72,13 +73,6 @@ def state_to_value(state: State, typing: EntityTyping, todo_items: list | None =
         return None, QUALITY_BAD
     if raw == STATE_UNKNOWN:
         return None, QUALITY_GOOD_NO_DATA
-
-    if typing.kind == KIND_TODO:
-        try:
-            count = float(raw)
-        except (TypeError, ValueError):
-            count = None
-        return {"state": count, "items": todo_items}, QUALITY_GOOD
 
     if typing.kind == KIND_BOOLEAN:
         mapped = BINARY_STATE_MAP.get(raw)
@@ -100,6 +94,11 @@ def state_to_value(state: State, typing: EntityTyping, todo_items: list | None =
         assert desc is not None
         if desc.state_type == "boolean":
             state_field = BINARY_STATE_MAP.get(raw)
+        elif desc.state_type == "number":
+            try:
+                state_field = float(raw)
+            except (TypeError, ValueError):
+                state_field = None
         else:
             state_field = str(raw)
         value = {"state": state_field}
@@ -107,16 +106,18 @@ def state_to_value(state: State, typing: EntityTyping, todo_items: list | None =
             value[attr.name] = _coerce_attr(
                 state.attributes.get(attr.name), attr.json_type
             )
+        if typing.service_key:
+            value[typing.service_key] = service_data
         return value, QUALITY_GOOD
 
     return None, QUALITY_GOOD_NO_DATA
 
 
 def state_to_vqt(
-    state: State, typing: EntityTyping, todo_items: list | None = None
+    state: State, typing: EntityTyping, service_data: list | None = None
 ) -> dict:
     """Full VQT record for a current-value read."""
-    value, quality = state_to_value(state, typing, todo_items)
+    value, quality = state_to_value(state, typing, service_data)
     return {
         "value": value,
         "quality": quality,

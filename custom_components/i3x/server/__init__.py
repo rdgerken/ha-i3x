@@ -20,7 +20,7 @@ from ..const import (
 from .http_util import InfoRateLimiter
 from .model import I3xModel
 from .subscriptions import SubscriptionManager
-from .todo import TodoItemsCache
+from .service_data import ServiceDataCache
 
 
 class I3xServer:
@@ -32,7 +32,7 @@ class I3xServer:
         self.model = I3xModel(hass, dict(entry.options))
         self.subscriptions = SubscriptionManager(hass, self)
         self.info_limiter = InfoRateLimiter()
-        self.todo_cache = TodoItemsCache(hass)
+        self.service_cache = ServiceDataCache(hass)
         self.server_version: str | None = None
 
     # ------------------------------------------------------------ options

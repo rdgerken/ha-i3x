@@ -47,16 +47,20 @@ def test_sensor_enum_is_string() -> None:
     assert typing.type_id == "type:sensor.text"
 
 
-def test_todo_classification_and_schema() -> None:
-    from custom_components.i3x.server.schemas import KIND_TODO
-
-    typing = classify_entity("todo", None, None, "3")
-    assert typing.kind == KIND_TODO
-    assert typing.type_id == "type:todo"
-    schema = schema_for(typing)
-    assert schema["type"] == "object"
-    assert schema["required"] == ["state"]
-    assert set(schema["properties"]) == {"state", "items"}
+def test_service_payload_domains() -> None:
+    """todo/calendar/weather graft their service payload into the schema."""
+    for domain, key, state in (
+        ("todo", "items", "3"),
+        ("calendar", "events", "on"),
+        ("weather", "forecast", "sunny"),
+    ):
+        typing = classify_entity(domain, None, None, state)
+        assert typing.kind == KIND_STRUCTURED
+        assert typing.service_key == key
+        schema = schema_for(typing)
+        assert schema["type"] == "object"
+        assert schema["properties"][key] == {"type": ["array", "null"]}
+    assert classify_entity("todo", None, None, "3").type_id == "type:todo"
 
 
 def test_fallback_domain_boolean_state() -> None:
@@ -81,12 +85,17 @@ def test_leaf_schemas() -> None:
 
 
 def test_structured_schema_covers_descriptor() -> None:
+    from custom_components.i3x.server.schemas import SERVICE_KEYS
+
     for domain, desc in STRUCTURED_DOMAINS.items():
         schema = schema_for(classify_entity(domain, None, None, None))
         assert schema["type"] == "object"
         assert schema["required"] == ["state"]
         props = schema["properties"]
-        assert set(props) == {"state"} | {a.name for a in desc.attributes}
+        expected = {"state"} | {a.name for a in desc.attributes}
+        if domain in SERVICE_KEYS:
+            expected.add(SERVICE_KEYS[domain])
+        assert set(props) == expected
         for attr in desc.attributes:
             assert props[attr.name] == {"type": [attr.json_type, "null"]}
 

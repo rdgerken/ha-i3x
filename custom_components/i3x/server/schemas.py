@@ -26,7 +26,11 @@ KIND_BOOLEAN = "boolean"
 KIND_NUMERIC = "numeric"
 KIND_STRING = "string"
 KIND_STRUCTURED = "structured"
-KIND_TODO = "todo"  # count + items fetched via the todo.get_items service
+
+# Domains whose primary content lives behind a response-returning service
+# call rather than in the state machine; the value object carries it under
+# this key, populated from the server's ServiceDataCache.
+SERVICE_KEYS = {"todo": "items", "calendar": "events", "weather": "forecast"}
 
 
 @dataclass(frozen=True)
@@ -41,7 +45,7 @@ class AttrSpec:
 class StructuredDescriptor:
     """Shape of a structured domain's value object."""
 
-    state_type: str  # "boolean" | "string"
+    state_type: str  # "boolean" | "string" | "number"
     attributes: tuple[AttrSpec, ...] = field(default_factory=tuple)
 
 
@@ -114,6 +118,13 @@ STRUCTURED_DOMAINS: dict[str, StructuredDescriptor] = {
         "string", (_n("current_temperature"), _n("temperature"), _s("operation_mode"))
     ),
     "alarm_control_panel": StructuredDescriptor("string", (_s("changed_by"),)),
+    # Service-payload domains (see SERVICE_KEYS): the state plus curated
+    # attributes here, with items/events/forecast grafted on by the server.
+    "todo": StructuredDescriptor("number"),
+    "calendar": StructuredDescriptor(
+        "boolean",
+        (_s("message"), _s("start_time"), _s("end_time"), _b("all_day")),
+    ),
 }
 
 # Domains whose state is a plain on/off style boolean.
@@ -138,6 +149,7 @@ class EntityTyping:
     type_id: str
     kind: str  # KIND_*
     structured: StructuredDescriptor | None = None
+    service_key: str | None = None  # value key filled from ServiceDataCache
 
 
 def classify_entity(
@@ -149,10 +161,11 @@ def classify_entity(
     """Map an HA entity to its i3X Object Type id and value kind."""
     if domain in STRUCTURED_DOMAINS:
         return EntityTyping(
-            f"{TYPE_PREFIX}{domain}", KIND_STRUCTURED, STRUCTURED_DOMAINS[domain]
+            f"{TYPE_PREFIX}{domain}",
+            KIND_STRUCTURED,
+            STRUCTURED_DOMAINS[domain],
+            service_key=SERVICE_KEYS.get(domain),
         )
-    if domain == "todo":
-        return EntityTyping(f"{TYPE_PREFIX}todo", KIND_TODO)
     if domain in BOOLEAN_DOMAINS:
         suffix = f".{device_class}" if device_class else ""
         return EntityTyping(f"{TYPE_PREFIX}{domain}{suffix}", KIND_BOOLEAN)
@@ -195,20 +208,13 @@ def schema_for(typing: EntityTyping) -> dict:
         return {"type": "number"}
     if typing.kind == KIND_STRING:
         return {"type": "string"}
-    if typing.kind == KIND_TODO:
-        return {
-            "type": "object",
-            "properties": {
-                "state": _nullable("number"),
-                "items": _nullable("array"),
-            },
-            "required": ["state"],
-        }
     desc = typing.structured
     assert desc is not None
     props: dict[str, dict] = {"state": _nullable(desc.state_type)}
     for attr in desc.attributes:
         props[attr.name] = _nullable(attr.json_type)
+    if typing.service_key:
+        props[typing.service_key] = _nullable("array")
     return {"type": "object", "properties": props, "required": ["state"]}
 
 

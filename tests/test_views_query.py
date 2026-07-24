@@ -189,6 +189,78 @@ async def test_todo_value_includes_items(world, hass, hass_client) -> None:
     assert (await resp.json())["results"][0]["success"] is True
 
 
+async def test_calendar_value_includes_events(world, hass, hass_client) -> None:
+    from homeassistant.core import SupportsResponse
+
+    from custom_components.i3x.const import DOMAIN
+
+    events = [
+        {
+            "start": "2026-07-25T18:00:00-04:00",
+            "end": "2026-07-25T21:00:00-04:00",
+            "summary": "Birthday party",
+        }
+    ]
+
+    async def handle_get_events(call):
+        assert "start_date_time" in call.data and "end_date_time" in call.data
+        return {"calendar.family": {"events": events}}
+
+    hass.services.async_register(
+        "calendar", "get_events", handle_get_events,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.states.async_set("calendar.family", "off", {"message": ""})
+    await hass.async_block_till_done()
+    hass.data[DOMAIN]["server"].model.invalidate()
+
+    client = await hass_client()
+    resp = await client.post(
+        "/api/i3x/v1/objects/value", json={"elementIds": ["calendar.family"]}
+    )
+    result = (await resp.json())["results"][0]["result"]
+    assert result["value"]["state"] is False
+    assert result["value"]["events"] == events
+
+
+async def test_weather_value_includes_forecast(world, hass, hass_client) -> None:
+    from homeassistant.core import SupportsResponse
+
+    from custom_components.i3x.const import DOMAIN
+
+    forecast = [
+        {"datetime": "2026-07-25T00:00:00Z", "condition": "sunny", "temperature": 88},
+        {"datetime": "2026-07-26T00:00:00Z", "condition": "rainy", "temperature": 79},
+    ]
+    seen_types = []
+
+    async def handle_get_forecasts(call):
+        seen_types.append(call.data.get("type"))
+        return {"weather.home": {"forecast": forecast}}
+
+    hass.services.async_register(
+        "weather", "get_forecasts", handle_get_forecasts,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.states.async_set(
+        "weather.home",
+        "sunny",
+        {"temperature": 85.0, "humidity": 40, "supported_features": 3},
+    )
+    await hass.async_block_till_done()
+    hass.data[DOMAIN]["server"].model.invalidate()
+
+    client = await hass_client()
+    resp = await client.post(
+        "/api/i3x/v1/objects/value", json={"elementIds": ["weather.home"]}
+    )
+    result = (await resp.json())["results"][0]["result"]
+    assert result["value"]["state"] == "sunny"
+    assert result["value"]["temperature"] == 85.0
+    assert result["value"]["forecast"] == forecast
+    assert seen_types == ["daily"]  # prefers daily when supported
+
+
 async def test_objects_value_unavailable(world, hass, hass_client) -> None:
     hass.states.async_set(
         world["sensor"],
