@@ -138,6 +138,57 @@ async def test_history_lts_backfill(world, hass, hass_client, monkeypatch) -> No
     assert any(v["value"] == 21.5 for v in values[3:])
 
 
+async def test_todo_value_includes_items(world, hass, hass_client) -> None:
+    """Todo entities expose their actual list items, not just the count."""
+    from homeassistant.core import SupportsResponse
+
+    from custom_components.i3x.const import DOMAIN
+
+    items = [
+        {"uid": "1", "summary": "Milk", "status": "needs_action"},
+        {"uid": "2", "summary": "Eggs", "status": "completed"},
+    ]
+
+    async def handle_get_items(call):
+        return {"todo.groceries": {"items": items}}
+
+    hass.services.async_register(
+        "todo", "get_items", handle_get_items,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.states.async_set("todo.groceries", "1")
+    await hass.async_block_till_done()
+    hass.data[DOMAIN]["server"].model.invalidate()
+
+    client = await hass_client()
+    resp = await client.post(
+        "/api/i3x/v1/objects/value", json={"elementIds": ["todo.groceries"]}
+    )
+    result = (await resp.json())["results"][0]["result"]
+    assert result["quality"] == "Good"
+    assert result["value"]["state"] == 1.0
+    assert result["value"]["items"] == items
+
+    # The declared type is a structured object schema.
+    resp = await client.post(
+        "/api/i3x/v1/objecttypes/query", json={"elementIds": ["type:todo"]}
+    )
+    schema = (await resp.json())["results"][0]["result"]["schema"]
+    assert schema["type"] == "object"
+    assert set(schema["properties"]) == {"state", "items"}
+
+    # An echo write of the exact read value is a no-op success.
+    resp = await client.put(
+        "/api/i3x/v1/objects/value",
+        json={
+            "updates": [
+                {"elementId": "todo.groceries", "value": {"value": result["value"]}}
+            ]
+        },
+    )
+    assert (await resp.json())["results"][0]["success"] is True
+
+
 async def test_objects_value_unavailable(world, hass, hass_client) -> None:
     hass.states.async_set(
         world["sensor"],

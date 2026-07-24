@@ -281,13 +281,13 @@ class I3xObjectsValueView(_I3xBaseView):
                     continue
                 result = {
                     "isComposition": obj.is_composition,
-                    **self._object_vqt(snapshot, obj),
+                    **(await self._object_vqt_fresh(engine, obj)),
                 }
                 # maxDepth recurses through HasComponent only; 1 = no
                 # recursion (default), 0 = infinite.
                 if obj.is_composition and max_depth != 1:
                     result["components"] = {
-                        child.element_id: self._object_vqt(snapshot, child)
+                        child.element_id: self._object_vqt(engine, child)
                         for child in snapshot.component_children(obj)
                     }
                 results.append(item_ok("elementId", eid, result))
@@ -295,10 +295,32 @@ class I3xObjectsValueView(_I3xBaseView):
 
         return await self._run(request, handler)
 
-    def _object_vqt(self, snapshot, obj) -> dict:
+    async def _object_vqt_fresh(self, engine, obj) -> dict:
+        """VQT for a directly-requested object; fetches todo items live."""
         if obj.entity_id is not None and obj.typing is not None:
             state = self.hass.states.get(obj.entity_id)
             if state is not None:
+                from .schemas import KIND_TODO
+
+                if obj.typing.kind == KIND_TODO:
+                    items = await engine.todo_cache.async_get(obj.entity_id, state)
+                    return state_to_vqt(state, obj.typing, todo_items=items)
+                return state_to_vqt(state, obj.typing)
+        return no_data_vqt()
+
+    def _object_vqt(self, engine, obj) -> dict:
+        """Synchronous VQT (component children); todo items from cache."""
+        if obj.entity_id is not None and obj.typing is not None:
+            state = self.hass.states.get(obj.entity_id)
+            if state is not None:
+                from .schemas import KIND_TODO
+
+                if obj.typing.kind == KIND_TODO:
+                    return state_to_vqt(
+                        state,
+                        obj.typing,
+                        todo_items=engine.todo_cache.peek(obj.entity_id),
+                    )
                 return state_to_vqt(state, obj.typing)
         return no_data_vqt()
 
@@ -314,6 +336,7 @@ class I3xObjectsValueView(_I3xBaseView):
                 updates,
                 engine.write_enabled,
                 engine.write_filter,
+                engine.todo_cache,
             )
             return self.json(bulk_body(results))
 

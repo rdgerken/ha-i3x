@@ -24,6 +24,7 @@ from homeassistant.util import dt as dt_util
 
 from .http_util import ProblemError, item_not_found, item_ok, item_problem
 from .model import AddressSpace, I3xObject
+from .schemas import KIND_TODO
 from .values import iso_z, state_to_value
 
 TRUTHY = {True, 1, 1.0, "on", "true", "True", "1"}
@@ -148,14 +149,17 @@ async def _dispatch(hass: HomeAssistant, obj: I3xObject, value) -> str | None:
     return f"writes are not supported for the {domain} domain"
 
 
-def _current_value(hass: HomeAssistant, obj: I3xObject):
+def _current_value(hass: HomeAssistant, obj: I3xObject, todo_cache=None):
     """(value, quality, state) for an entity-backed object, else Nones."""
     if obj.entity_id is None or obj.typing is None:
         return None, None, None
     state = hass.states.get(obj.entity_id)
     if state is None:
         return None, None, None
-    value, quality = state_to_value(state, obj.typing)
+    todo_items = None
+    if todo_cache is not None and obj.typing.kind == KIND_TODO:
+        todo_items = todo_cache.peek(obj.entity_id)
+    value, quality = state_to_value(state, obj.typing, todo_items)
     return value, quality, state
 
 
@@ -165,6 +169,7 @@ async def write_values(
     updates: list,
     write_enabled: bool,
     write_filter,
+    todo_cache=None,
 ) -> list[dict]:
     """Handle PUT /objects/value as a bulk of per-item results."""
     results: list[dict] = []
@@ -191,7 +196,7 @@ async def write_values(
             results.append(item_not_found("elementId", element_id))
             continue
         written = vqt["value"]
-        current, quality, state = _current_value(hass, obj)
+        current, quality, state = _current_value(hass, obj, todo_cache)
         if state is None:
             results.append(
                 item_problem(

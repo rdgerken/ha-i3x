@@ -24,6 +24,7 @@ from .schemas import (
     KIND_NUMERIC,
     KIND_STRING,
     KIND_STRUCTURED,
+    KIND_TODO,
     EntityTyping,
 )
 
@@ -57,17 +58,27 @@ def _coerce_attr(value, json_type: str):
     return None
 
 
-def state_to_value(state: State, typing: EntityTyping):
+def state_to_value(state: State, typing: EntityTyping, todo_items: list | None = None):
     """Convert an HA state to (value, quality) per the entity's typing.
 
     The timestamp is handled separately (event time for live values,
-    state.last_updated for reads).
+    state.last_updated for reads). ``todo_items`` carries the list items for
+    todo entities when the caller has them (they live behind a service call,
+    not in the state machine); None is honest for paths without item access,
+    such as history.
     """
     raw = state.state
     if raw == STATE_UNAVAILABLE:
         return None, QUALITY_BAD
     if raw == STATE_UNKNOWN:
         return None, QUALITY_GOOD_NO_DATA
+
+    if typing.kind == KIND_TODO:
+        try:
+            count = float(raw)
+        except (TypeError, ValueError):
+            count = None
+        return {"state": count, "items": todo_items}, QUALITY_GOOD
 
     if typing.kind == KIND_BOOLEAN:
         mapped = BINARY_STATE_MAP.get(raw)
@@ -101,9 +112,11 @@ def state_to_value(state: State, typing: EntityTyping):
     return None, QUALITY_GOOD_NO_DATA
 
 
-def state_to_vqt(state: State, typing: EntityTyping) -> dict:
+def state_to_vqt(
+    state: State, typing: EntityTyping, todo_items: list | None = None
+) -> dict:
     """Full VQT record for a current-value read."""
-    value, quality = state_to_value(state, typing)
+    value, quality = state_to_value(state, typing, todo_items)
     return {
         "value": value,
         "quality": quality,

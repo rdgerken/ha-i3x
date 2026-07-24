@@ -26,6 +26,7 @@ KIND_BOOLEAN = "boolean"
 KIND_NUMERIC = "numeric"
 KIND_STRING = "string"
 KIND_STRUCTURED = "structured"
+KIND_TODO = "todo"  # count + items fetched via the todo.get_items service
 
 
 @dataclass(frozen=True)
@@ -150,6 +151,8 @@ def classify_entity(
         return EntityTyping(
             f"{TYPE_PREFIX}{domain}", KIND_STRUCTURED, STRUCTURED_DOMAINS[domain]
         )
+    if domain == "todo":
+        return EntityTyping(f"{TYPE_PREFIX}todo", KIND_TODO)
     if domain in BOOLEAN_DOMAINS:
         suffix = f".{device_class}" if device_class else ""
         return EntityTyping(f"{TYPE_PREFIX}{domain}{suffix}", KIND_BOOLEAN)
@@ -192,6 +195,15 @@ def schema_for(typing: EntityTyping) -> dict:
         return {"type": "number"}
     if typing.kind == KIND_STRING:
         return {"type": "string"}
+    if typing.kind == KIND_TODO:
+        return {
+            "type": "object",
+            "properties": {
+                "state": _nullable("number"),
+                "items": _nullable("array"),
+            },
+            "required": ["state"],
+        }
     desc = typing.structured
     assert desc is not None
     props: dict[str, dict] = {"state": _nullable(desc.state_type)}
