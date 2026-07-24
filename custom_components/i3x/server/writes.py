@@ -207,15 +207,27 @@ async def write_values(
             # Idempotent echo write: no-op success.
             results.append(item_ok("elementId", element_id, None))
             continue
-        if not write_enabled or not write_filter(obj.entity_id):
+        if not write_enabled:
             results.append(
                 item_problem(
                     "elementId",
                     element_id,
                     403,
                     "Forbidden",
-                    "Value-changing writes are disabled for this entity; "
-                    "enable writes and add it to the allowlist in the i3X options",
+                    "Value-changing writes are disabled; enable them in the "
+                    "i3X options",
+                )
+            )
+            continue
+        if not write_filter(obj.entity_id):
+            results.append(
+                item_problem(
+                    "elementId",
+                    element_id,
+                    403,
+                    "Forbidden",
+                    "This entity is not in the write allowlist; add it in the "
+                    "i3X options (an empty allowlist permits all entities)",
                 )
             )
             continue

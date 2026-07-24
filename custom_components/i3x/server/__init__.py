@@ -54,7 +54,15 @@ class I3xServer:
 
     @property
     def write_filter(self):
+        """Which entities accept value-changing writes (when writes are on).
+
+        An empty allowlist deliberately means ALL exposed entities are
+        writable: the master toggle is the gate, and the globs exist to
+        narrow it. Locks are refused unconditionally in writes.py.
+        """
         globs = self.entry.options.get(CONF_WRITE_ENTITY_GLOBS, [])
+        if not globs:
+            return lambda entity_id: True
         return generate_filter(
             include_domains=[],
             include_entities=[],

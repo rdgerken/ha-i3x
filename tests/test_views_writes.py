@@ -59,6 +59,24 @@ async def test_write_outside_allowlist_denied(world, hass, hass_client) -> None:
     assert body["results"][0]["responseDetail"]["status"] == 403
 
 
+async def test_empty_allowlist_means_all(world, hass, hass_client, server_entry) -> None:
+    """With writes on and no globs, every supported entity is writable."""
+    hass.config_entries.async_update_entry(
+        server_entry,
+        options={**server_entry.options, "write_entity_globs": []},
+    )
+    await hass.async_block_till_done()
+    calls = async_mock_service(hass, "switch", "turn_off")
+    client = await hass_client()
+    resp = await client.put(
+        "/api/i3x/v1/objects/value",
+        json={"updates": [{"elementId": world["switch"], "value": {"value": False}}]},
+    )
+    body = await resp.json()
+    assert body["results"][0]["success"] is True, body
+    assert len(calls) == 1
+
+
 async def test_lock_never_writable(world, hass, hass_client, server_entry) -> None:
     hass.states.async_set("lock.front_door", "locked")
     hass.config_entries.async_update_entry(

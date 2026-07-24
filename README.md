@@ -47,7 +47,7 @@ The security boundary is Home Assistant's own bearer-token auth: every endpoint 
 - **`local_only` (default on)**: all i3X endpoints, `/info` included, refuse requests from non-private addresses (evaluated after HA's `trusted_proxies` handling).
 - `/info` is **rate limited** per IP for non-local clients and discloses no identifying details (generic server name, no HA version).
 - Resource caps throughout: bulk requests of at most 500 ids, 20 subscriptions per client and 100 total, 500 monitored objects each, 10 concurrent SSE streams, bounded queues, history row limits, and recorder reads off the event loop.
-- **Value-changing writes are off by default.** Out of the box, the only writes that succeed are idempotent echoes: writing a value identical to the current one, which changes nothing (and is exactly what the conformance suite's non-destructive write tests do). Turning anything on requires enabling writes *and* adding the entity to the write allowlist in the options. **Locks are never writable**, and history writes can never invent or alter data points.
+- **Value-changing writes are off by default.** Out of the box, the only writes that succeed are idempotent echoes: writing a value identical to the current one, which changes nothing (and is exactly what the conformance suite's non-destructive write tests do). The master toggle in the options enables real writes for all exposed entities; the optional write allowlist narrows that to specific entities (an empty allowlist means all). **Locks are never writable**, and history writes can never invent or alter data points.
 
 Exposing the API beyond your LAN is a deliberate opt-out of `local_only`. Prefer VPN or Tailscale reach over a public route, and note that SSO forward-auth proxies generally cannot sit in front of headless i3X API clients.
 
@@ -77,7 +77,7 @@ curl -H "Authorization: Bearer <token>" \
 | Include domains / include globs / exclude globs | all | Which entities are exposed (uses HA's entity-filter syntax) |
 | Subscription TTL | 600 s | Idle time before a subscription is expired |
 | Allow value-changing writes | off | Master switch for writes that actually change entity state |
-| Writable entity globs | empty | Allowlist for value-changing writes (e.g. `switch.*`, `input_number.pool_*`) |
+| Writable entity globs | empty (= all) | Optional allowlist narrowing writes to specific entities (e.g. `switch.*`, `input_number.pool_*`) |
 
 ### Client options
 

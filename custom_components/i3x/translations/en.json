@@ -20,7 +20,7 @@
           "exclude_entity_globs": "Exclude entity globs",
           "subscription_ttl": "Subscription idle timeout (seconds)",
           "write_enabled": "Allow value-changing writes (echo/no-op writes are always accepted)",
-          "write_entity_globs": "Writable entity globs (allowlist for value-changing writes)"
+          "write_entity_globs": "Writable entity globs (empty = all entities when writes are enabled)"
         }
       },
       "client": {
@@ -60,7 +60,7 @@
           "exclude_entity_globs": "Exclude entity globs",
           "subscription_ttl": "Subscription idle timeout (seconds)",
           "write_enabled": "Allow value-changing writes (echo/no-op writes are always accepted)",
-          "write_entity_globs": "Writable entity globs (allowlist for value-changing writes)",
+          "write_entity_globs": "Writable entity globs (empty = all entities when writes are enabled)",
           "live_element_ids": "Remote elementIds to surface as sensors",
           "import_element_ids": "Remote elementIds to import as measurement statistics",
           "import_counter_element_ids": "Remote elementIds to import as counter statistics"
