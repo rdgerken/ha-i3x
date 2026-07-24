@@ -20,7 +20,10 @@ jobs:
         with:
           node-version: "20"
       - name: Install Home Assistant
-        run: pip install homeassistant
+        # home-assistant-frontend must be pre-installed: HA's runtime pip
+        # install can fail on hosted runners, and a missing frontend flips HA
+        # into recovery mode, which does not load custom integrations.
+        run: pip install homeassistant home-assistant-frontend
       - name: Build CI config
         run: |
           mkdir -p ci-ha/custom_components
