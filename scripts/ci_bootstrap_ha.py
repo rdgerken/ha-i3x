@@ -78,22 +78,44 @@ def main() -> None:
     )
     token = token_resp["access_token"]
 
-    request("POST", "/api/onboarding/core_config", {}, token=token)
-    request("POST", "/api/onboarding/analytics", {}, token=token)
-    request(
-        "POST",
-        "/api/onboarding/integration",
-        {"client_id": CLIENT_ID, "redirect_uri": f"{CLIENT_ID}?auth_callback=1"},
-        token=token,
-    )
+    # Remaining onboarding steps vary across HA versions — attempt each,
+    # tolerate ones that no longer exist.
+    for path, payload in (
+        ("/api/onboarding/core_config", {}),
+        ("/api/onboarding/analytics", {}),
+        (
+            "/api/onboarding/integration",
+            {"client_id": CLIENT_ID, "redirect_uri": f"{CLIENT_ID}?auth_callback=1"},
+        ),
+    ):
+        try:
+            request("POST", path, payload, token=token)
+        except urllib.error.HTTPError as err:
+            print(f"onboarding step {path}: HTTP {err.code} (skipped)", file=sys.stderr)
     print("Onboarding complete; creating i3X server entry…", file=sys.stderr)
 
-    flow = request(
-        "POST",
-        "/api/config/config_entries/flow",
-        {"handler": "i3x", "show_advanced_options": False},
-        token=token,
-    )
+    # The config component registers its HTTP routes asynchronously after
+    # onboarding — retry until the flow API is up.
+    flow = None
+    for attempt in range(30):
+        try:
+            flow = request(
+                "POST",
+                "/api/config/config_entries/flow",
+                {"handler": "i3x", "show_advanced_options": False},
+                token=token,
+            )
+            break
+        except urllib.error.HTTPError as err:
+            if err.code not in (404, 503):
+                raise
+            print(
+                f"config flow API not ready (HTTP {err.code}), retrying…",
+                file=sys.stderr,
+            )
+            time.sleep(2)
+    if flow is None:
+        raise SystemExit("config_entries flow API never became available")
     result = request(
         "POST",
         f"/api/config/config_entries/flow/{flow['flow_id']}",
