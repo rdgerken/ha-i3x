@@ -1,0 +1,36 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "i3X Server",
+        "description": "Expose Home Assistant as a CESMII i3X 1.0 server at /api/i3x/v1. All endpoints except /info require a Home Assistant access token.",
+        "data": {
+          "server_name": "Server name (shown on the unauthenticated /info endpoint)",
+          "local_only": "Only accept requests from the local network",
+          "include_domains": "Include domains (empty = all)",
+          "include_entity_globs": "Include entity globs",
+          "exclude_entity_globs": "Exclude entity globs",
+          "subscription_ttl": "Subscription idle timeout (seconds)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "The i3X server is already configured. Adjust it via the integration's options."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "i3X Server options",
+        "data": {
+          "server_name": "Server name (shown on the unauthenticated /info endpoint)",
+          "local_only": "Only accept requests from the local network",
+          "include_domains": "Include domains (empty = all)",
+          "include_entity_globs": "Include entity globs",
+          "exclude_entity_globs": "Exclude entity globs",
+          "subscription_ttl": "Subscription idle timeout (seconds)"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,73 @@
+name: Conformance
+on:
+  push:
+  pull_request:
+
+jobs:
+  i3x-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: cesmii/i3X
+          ref: "1.0"
+          path: i3x-spec
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Home Assistant
+        run: pip install homeassistant
+      - name: Build CI config
+        run: |
+          mkdir -p ci-ha/custom_components
+          cp -r custom_components/i3x ci-ha/custom_components/
+          cat > ci-ha/configuration.yaml <<'EOF'
+          homeassistant:
+            name: CI Home
+          frontend:
+          http:
+          api:
+          recorder:
+          input_boolean:
+            test_toggle:
+              name: Test Toggle
+              initial: on
+          input_number:
+            test_level:
+              name: Test Level
+              min: 0
+              max: 100
+              initial: 42
+          template:
+            - sensor:
+                - name: "CI Temperature"
+                  unit_of_measurement: "°C"
+                  state: "{{ 21.5 }}"
+          EOF
+      - name: Start Home Assistant
+        run: |
+          hass -c ci-ha > hass.log 2>&1 &
+          echo $! > hass.pid
+      - name: Bootstrap (onboarding, token, i3X entry)
+        run: |
+          TOKEN=$(python scripts/ci_bootstrap_ha.py http://127.0.0.1:8123)
+          echo "::add-mask::$TOKEN"
+          echo "HA_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+      - name: Run i3X conformance suite
+        run: |
+          node i3x-spec/conformance-tests/bin/i3x-test.js run \
+            http://127.0.0.1:8123/api/i3x/v1 \
+            --token "$HA_TOKEN" --no-writes --json report.json
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-report
+          path: report.json
+      - name: Show HA log on failure
+        if: failure()
+        run: tail -100 hass.log
