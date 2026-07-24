@@ -8,21 +8,24 @@ Home Assistant speaks **[CESMII i3X 1.0](https://github.com/cesmii/i3X)** — th
 **Conformance: `Full 1.0 Compliance`** 🎉 — every MUST *and* every declared optional feature of the official [i3X Conformance Test Suite](https://github.com/cesmii/i3X/tree/1.0/conformance-tests) passes, with a rich structured type system (verdict from `i3x-test` v1.0.0, re-verified in CI on every push).
 
 ```
-┌─────────────────────────────┐          ┌──────────────────────────────┐
-│        Home Assistant       │          │         i3X clients          │
-│                             │          │                              │
-│  areas ─ devices ─ entities │──────────▶  i3X Explorer, Python SDK,   │
-│  recorder history           │ /api/i3x │  MCP server, AI apps, ...    │
-│  state-change events        │   /v1    │                              │
-└─────────────────────────────┘          └──────────────────────────────┘
+                                serve /api/i3x/v1
+┌─────────────────────────────┐ ───────────────▶ ┌──────────────────────────────┐
+│        Home Assistant       │                  │      the i3X ecosystem       │
+│                             │                  │                              │
+│  areas ─ devices ─ entities │                  │  i3X Explorer, Python SDK,   │
+│  recorder + statistics      │                  │  MCP server, AI apps,        │
+│  state-change events        │                  │  historians, i3X servers     │
+│                             │ ◀─────────────── │                              │
+└─────────────────────────────┘  consume: sensors,└──────────────────────────────┘
+                                 statistics, writes
 ```
 
 ## What it does
 
-- **Model browsing** — a single-rooted hierarchy (`home` → areas → devices → entities) served through `GET /objects`, `POST /objects/list`, and `POST /objects/related` with bidirectional `HasParent`/`HasChildren` edges.
+- **Model browsing** — a single-rooted hierarchy (`home` → areas → devices → entities) served through `GET /objects`, `POST /objects/list`, and `POST /objects/related` with bidirectional edges. Devices are **compositions**: they carry `HasComponent`/`ComponentOf` edges to their entities, and value/history reads with `maxDepth > 1` (or `0`) fold the component entities into a `components` map.
 - **Rich object types** — JSON-Schema types generated per domain/device-class/unit: structured schemas for `light`, `climate`, `cover`, `media_player`, `weather`, and more; scalar leaf types for sensors (`type:sensor.temperature.degc` → `{"type": "number"}`).
 - **Current values** — `POST /objects/value` returns VQT records (value/quality/timestamp) mapped from live HA states; `unavailable` → `Bad`, `unknown` → `GoodNoData`, per the spec's null-pairing rules.
-- **History** — `POST /objects/history` serves the recorder's data as VQT arrays (row-capped with honest HTTP 206 on truncation).
+- **History** — `POST /objects/history` serves the recorder's data as VQT arrays, and for spans older than the recorder's purge window it backfills numeric entities from **long-term statistics** (hourly points, kept forever) — so history requests reach years back, not just ~10 days. Row-capped with honest HTTP 206 on truncation.
 - **Subscriptions** — create/register/sync with monotonic sequence numbers, ack semantics (`lastSequenceNumber`, `-1` clears), poll-style snapshot capture, queue-overflow 206s, and mandatory idle-TTL expiry. Fed live from HA's event bus.
 - **SSE streaming** — `POST /subscriptions/stream` pushes state changes as they happen (single stream per subscription with clean takeover, keep-alive heartbeats for proxies).
 - **Writes** — `PUT /objects/value` maps to Home Assistant service calls per domain (switch/light/number/select/cover/climate/…). Two tiers: *idempotent echo writes* (writing a value that equals the current one) always succeed as no-ops; *value-changing* writes require the write toggle plus a per-entity allowlist. `PUT /objects/history` accepts idempotent replacements only — HA's recorder is append-only.
@@ -88,9 +91,9 @@ The write tests are non-destructive (they echo current values back), so they are
 
 ## Known limitations
 
-- History depth equals your recorder purge window (default 10 days). Long-term statistics as an i3X history source is on the roadmap.
+- Full-fidelity history equals your recorder purge window (default 10 days); older spans come from long-term statistics, i.e. hourly resolution, numeric entities only.
 - History *writes* are idempotent replacements only — HA's recorder is append-only, so novel or altered past points are refused per-item.
-- No composition objects yet (`isComposition` is always `false`; `maxDepth` is accepted and trivially satisfied).
+- Composition depth is one level (device → entities); `maxDepth` beyond that is trivially satisfied.
 - Subscriptions are in-memory: an HA restart drops them (spec-legal — clients recreate on 404).
 - Browser-based clients (i3X Explorer) need their origin added to HA's `http: cors_allowed_origins`.
 
@@ -100,7 +103,8 @@ The write tests are non-destructive (they echo current values back), so they are
 - [x] Writes mapped to service calls, default-off behind an entity allowlist — v0.2
 - [x] **Full 1.0 Compliance** verdict — v0.2
 - [x] i3X **client** half: consume external i3X servers into HA entities and long-term statistics — v0.3
-- [ ] Long-term statistics as a deep-history source
+- [x] Long-term statistics as a deep-history source — v0.4
+- [x] Composition objects (devices fold their entities into `components`) — v0.4
 
 ## Disclaimer
 

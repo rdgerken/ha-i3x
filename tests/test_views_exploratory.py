@@ -71,7 +71,7 @@ async def test_relationshiptypes(world, hass, hass_client) -> None:
     client = await hass_client()
     body = await (await client.get("/api/i3x/v1/relationshiptypes")).json()
     rels = {r["elementId"]: r for r in body["result"]}
-    assert set(rels) == {"HasParent", "HasChildren"}
+    assert set(rels) == {"HasParent", "HasChildren", "HasComponent", "ComponentOf"}
     for rel in rels.values():
         assert rels[rel["reverseOf"]]["reverseOf"] == rel["elementId"]
         assert rel["relationshipId"]
@@ -131,23 +131,24 @@ async def test_related_bidirectional_and_filter(world, hass, hass_client) -> Non
     client = await hass_client()
     device_element = f"device:{world['device_id']}"
 
+    # The device is a composition, so its entities are components.
     resp = await client.post(
         "/api/i3x/v1/objects/related", json={"elementIds": [world["sensor"]]}
     )
     edges = (await resp.json())["results"][0]["result"]
     assert any(
-        e["sourceRelationship"] == "HasParent"
+        e["sourceRelationship"] == "ComponentOf"
         and e["object"]["elementId"] == device_element
         for e in edges
     )
 
-    # Reverse direction from the parent.
+    # Reverse direction from the composition parent.
     resp = await client.post(
         "/api/i3x/v1/objects/related", json={"elementIds": [device_element]}
     )
     edges = (await resp.json())["results"][0]["result"]
     assert any(
-        e["sourceRelationship"] == "HasChildren"
+        e["sourceRelationship"] == "HasComponent"
         and e["object"]["elementId"] == world["sensor"]
         for e in edges
     )

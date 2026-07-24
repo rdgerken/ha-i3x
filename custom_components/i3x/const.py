@@ -101,6 +101,8 @@ TYPE_PREFIX = "type:"
 
 REL_HAS_PARENT = "HasParent"
 REL_HAS_CHILDREN = "HasChildren"
+REL_HAS_COMPONENT = "HasComponent"
+REL_COMPONENT_OF = "ComponentOf"
 
 # HA states mapped to booleans for boolean-kind entities.
 BINARY_STATE_MAP = {

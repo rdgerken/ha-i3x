@@ -23,6 +23,7 @@ async def test_hierarchy(world, hass) -> None:
 
     device = objects[f"device:{world['device_id']}"]
     assert device.parent_id == f"area:{world['area_id']}"
+    assert device.is_composition is True
 
     sensor = objects[world["sensor"]]
     assert sensor.parent_id == f"device:{world['device_id']}"
@@ -60,14 +61,21 @@ async def test_related_edges_bidirectional(world, hass) -> None:
 
     up = snapshot.related(sensor, None, False)
     assert any(
-        e["sourceRelationship"] == "HasParent"
+        e["sourceRelationship"] == "ComponentOf"
         and e["object"]["elementId"] == device_id
         for e in up
     )
     device = snapshot.objects[device_id]
-    down = snapshot.related(device, "HasChildren", False)
+    down = snapshot.related(device, "HasComponent", False)
     assert any(e["object"]["elementId"] == world["sensor"] for e in down)
-    assert all(e["sourceRelationship"] == "HasChildren" for e in down)
+    assert all(e["sourceRelationship"] == "HasComponent" for e in down)
+
+    # The device hangs off a non-composition area with plain hierarchy edges.
+    area = snapshot.objects[f"area:{world['area_id']}"]
+    device_up = snapshot.related(device, "HasParent", False)
+    assert [e["object"]["elementId"] for e in device_up] == [area.element_id]
+    area_down = snapshot.related(area, "HasChildren", False)
+    assert any(e["object"]["elementId"] == device_id for e in area_down)
 
 
 async def test_entity_filter_hides_everywhere(

@@ -30,7 +30,9 @@ from ..const import (
     DEVICE_PREFIX,
     NAMESPACE_NAME,
     NAMESPACE_URI,
+    REL_COMPONENT_OF,
     REL_HAS_CHILDREN,
+    REL_HAS_COMPONENT,
     REL_HAS_PARENT,
     ROOT_ELEMENT_ID,
     TYPE_PREFIX,
@@ -60,6 +62,7 @@ class I3xObject:
     entity_id: str | None = None  # set only for entity-backed objects
     typing: EntityTyping | None = None  # set only for entity-backed objects
     description: str | None = None
+    is_composition: bool = False  # devices fold their entities into components
 
 
 class AddressSpace:
@@ -76,6 +79,29 @@ class AddressSpace:
         self.children = children
         self.relationship_types = {r["elementId"]: r for r in relationship_types()}
 
+    # ------------------------------------------------------------- edges
+    def _up_edge_label(self, obj: I3xObject) -> str | None:
+        """HasParent, or ComponentOf when the parent is a composition."""
+        if obj.parent_id is None:
+            return None
+        parent = self.objects.get(obj.parent_id)
+        if parent is not None and parent.is_composition:
+            return REL_COMPONENT_OF
+        return REL_HAS_PARENT
+
+    def _down_edge_label(self, obj: I3xObject) -> str:
+        return REL_HAS_COMPONENT if obj.is_composition else REL_HAS_CHILDREN
+
+    def component_children(self, obj: I3xObject) -> list[I3xObject]:
+        """The component objects a composition folds into its value."""
+        if not obj.is_composition:
+            return []
+        return [
+            child
+            for child_id in self.children.get(obj.element_id, ())
+            if (child := self.objects.get(child_id)) is not None
+        ]
+
     # ------------------------------------------------------------- responses
     def object_response(self, obj: I3xObject, include_metadata: bool) -> dict:
         resp: dict = {
@@ -83,17 +109,17 @@ class AddressSpace:
             "displayName": obj.display_name,
             "typeElementId": obj.type_id,
             "parentId": obj.parent_id,
-            "isComposition": False,
+            "isComposition": obj.is_composition,
             "isExtended": False,
         }
         if include_metadata:
             type_rec = self.types.get(obj.type_id)
             relationships: dict[str, list[str]] = {}
-            if obj.parent_id is not None:
-                relationships[REL_HAS_PARENT] = [obj.parent_id]
+            if (up_label := self._up_edge_label(obj)) is not None:
+                relationships[up_label] = [obj.parent_id]
             child_ids = self.children.get(obj.element_id)
             if child_ids:
-                relationships[REL_HAS_CHILDREN] = list(child_ids)
+                relationships[self._down_edge_label(obj)] = list(child_ids)
             resp["metadata"] = {
                 "description": obj.description,
                 "typeNamespaceUri": NAMESPACE_URI,
@@ -107,22 +133,24 @@ class AddressSpace:
     ) -> list[dict]:
         """All relationship edges of an object, both directions."""
         edges: list[dict] = []
-        if relationship_type in (None, REL_HAS_PARENT) and obj.parent_id is not None:
+        up_label = self._up_edge_label(obj)
+        if up_label is not None and relationship_type in (None, up_label):
             parent = self.objects.get(obj.parent_id)
             if parent:
                 edges.append(
                     {
-                        "sourceRelationship": REL_HAS_PARENT,
+                        "sourceRelationship": up_label,
                         "object": self.object_response(parent, include_metadata),
                     }
                 )
-        if relationship_type in (None, REL_HAS_CHILDREN):
+        down_label = self._down_edge_label(obj)
+        if relationship_type in (None, down_label):
             for child_id in self.children.get(obj.element_id, ()):
                 child = self.objects.get(child_id)
                 if child:
                     edges.append(
                         {
-                            "sourceRelationship": REL_HAS_CHILDREN,
+                            "sourceRelationship": down_label,
                             "object": self.object_response(child, include_metadata),
                         }
                     )
@@ -256,6 +284,7 @@ class I3xModel:
                     type_id=f"{TYPE_PREFIX}device",
                     parent_id=parent,
                     description=" ".join(desc_bits) or "Home Assistant device",
+                    is_composition=True,
                 )
             )
 

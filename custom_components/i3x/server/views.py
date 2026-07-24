@@ -271,6 +271,7 @@ class I3xObjectsValueView(_I3xBaseView):
         async def handler(engine, request):
             body = await parse_json_body(request)
             ids = require_id_list(body)
+            max_depth = _parse_max_depth(body)
             snapshot = engine.model.snapshot()
             results = []
             for eid in ids:
@@ -278,21 +279,28 @@ class I3xObjectsValueView(_I3xBaseView):
                 if obj is None:
                     results.append(item_not_found("elementId", eid))
                     continue
-                if obj.entity_id is not None and obj.typing is not None:
-                    state = self.hass.states.get(obj.entity_id)
-                    vqt = (
-                        state_to_vqt(state, obj.typing)
-                        if state is not None
-                        else no_data_vqt()
-                    )
-                else:
-                    vqt = no_data_vqt()
-                results.append(
-                    item_ok("elementId", eid, {"isComposition": False, **vqt})
-                )
+                result = {
+                    "isComposition": obj.is_composition,
+                    **self._object_vqt(snapshot, obj),
+                }
+                # maxDepth recurses through HasComponent only; 1 = no
+                # recursion (default), 0 = infinite.
+                if obj.is_composition and max_depth != 1:
+                    result["components"] = {
+                        child.element_id: self._object_vqt(snapshot, child)
+                        for child in snapshot.component_children(obj)
+                    }
+                results.append(item_ok("elementId", eid, result))
             return self.json(bulk_body(results))
 
         return await self._run(request, handler)
+
+    def _object_vqt(self, snapshot, obj) -> dict:
+        if obj.entity_id is not None and obj.typing is not None:
+            state = self.hass.states.get(obj.entity_id)
+            if state is not None:
+                return state_to_vqt(state, obj.typing)
+        return no_data_vqt()
 
     async def put(self, request: web.Request) -> web.Response:
         async def handler(engine, request):
@@ -328,7 +336,7 @@ class I3xObjectsHistoryView(_I3xBaseView):
                 start, end = end, start
             snapshot = engine.model.snapshot()
             results, truncated = await fetch_history(
-                self.hass, snapshot, ids, start, end
+                self.hass, snapshot, ids, start, end, _parse_max_depth(body)
             )
             payload: dict[str, Any] = bulk_body(results)
             if truncated:
@@ -357,6 +365,13 @@ class I3xObjectsHistoryView(_I3xBaseView):
             return self.json(bulk_body(results))
 
         return await self._run(request, handler)
+
+
+def _parse_max_depth(body: dict) -> int:
+    raw = body.get("maxDepth", 1)
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+        return 1
+    return raw
 
 
 def _parse_time(raw: Any, field: str):

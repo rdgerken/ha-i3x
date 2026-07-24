@@ -14,7 +14,9 @@ from homeassistant.util import slugify
 
 from ..const import (
     NAMESPACE_URI,
+    REL_COMPONENT_OF,
     REL_HAS_CHILDREN,
+    REL_HAS_COMPONENT,
     REL_HAS_PARENT,
     TYPE_PREFIX,
 )
@@ -248,20 +250,20 @@ def object_type_response(type_id: str, schema: dict, display_name: str, source_t
 
 
 def relationship_types() -> list[dict]:
-    """The registered relationship types: HasParent ⇄ HasChildren."""
+    """The registered relationship types (each with its registered reverse)."""
+
+    def rel(element_id: str, reverse_of: str) -> dict:
+        return {
+            "elementId": element_id,
+            "displayName": element_id,
+            "namespaceUri": NAMESPACE_URI,
+            "relationshipId": element_id,
+            "reverseOf": reverse_of,
+        }
+
     return [
-        {
-            "elementId": REL_HAS_PARENT,
-            "displayName": REL_HAS_PARENT,
-            "namespaceUri": NAMESPACE_URI,
-            "relationshipId": REL_HAS_PARENT,
-            "reverseOf": REL_HAS_CHILDREN,
-        },
-        {
-            "elementId": REL_HAS_CHILDREN,
-            "displayName": REL_HAS_CHILDREN,
-            "namespaceUri": NAMESPACE_URI,
-            "relationshipId": REL_HAS_CHILDREN,
-            "reverseOf": REL_HAS_PARENT,
-        },
+        rel(REL_HAS_PARENT, REL_HAS_CHILDREN),
+        rel(REL_HAS_CHILDREN, REL_HAS_PARENT),
+        rel(REL_HAS_COMPONENT, REL_COMPONENT_OF),
+        rel(REL_COMPONENT_OF, REL_HAS_COMPONENT),
     ]

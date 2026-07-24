@@ -41,6 +41,103 @@ async def test_objects_value(world, hass, hass_client) -> None:
     assert body["success"] is False
 
 
+async def test_composition_value_maxdepth(world, hass, hass_client) -> None:
+    client = await hass_client()
+    device_element = f"device:{world['device_id']}"
+
+    # Default maxDepth=1: no components key.
+    resp = await client.post(
+        "/api/i3x/v1/objects/value", json={"elementIds": [device_element]}
+    )
+    result = (await resp.json())["results"][0]["result"]
+    assert result["isComposition"] is True
+    assert "components" not in result
+    assert result["value"] is None
+    assert result["quality"] == "GoodNoData"
+
+    # maxDepth=0 (infinite): component entity values fold in.
+    resp = await client.post(
+        "/api/i3x/v1/objects/value",
+        json={"elementIds": [device_element], "maxDepth": 0},
+    )
+    result = (await resp.json())["results"][0]["result"]
+    components = result["components"]
+    assert world["sensor"] in components
+    assert components[world["sensor"]]["value"] == 21.5
+    assert components[world["sensor"]]["quality"] == "Good"
+
+
+async def test_composition_history_maxdepth(world, hass, hass_client) -> None:
+    from pytest_homeassistant_custom_component.components.recorder.common import (
+        async_wait_recording_done,
+    )
+
+    hass.states.async_set(
+        world["sensor"],
+        "22.5",
+        {"unit_of_measurement": "°C", "device_class": "temperature"},
+    )
+    await async_wait_recording_done(hass)
+
+    device_element = f"device:{world['device_id']}"
+    start = _iso(dt_util.utcnow() - timedelta(hours=1))
+    end = _iso(dt_util.utcnow() + timedelta(minutes=5))
+    client = await hass_client()
+    resp = await client.post(
+        "/api/i3x/v1/objects/history",
+        json={
+            "elementIds": [device_element],
+            "startTime": start,
+            "endTime": end,
+            "maxDepth": 2,
+        },
+    )
+    result = (await resp.json())["results"][0]["result"]
+    assert result["isComposition"] is True
+    child = result["components"][world["sensor"]]
+    assert any(v["value"] == 22.5 for v in child["values"])
+
+
+async def test_history_lts_backfill(world, hass, hass_client, monkeypatch) -> None:
+    """Spans older than recorder data are served from long-term statistics."""
+    from pytest_homeassistant_custom_component.components.recorder.common import (
+        async_wait_recording_done,
+    )
+
+    import custom_components.i3x.server.history as history_mod
+
+    await async_wait_recording_done(hass)
+
+    old = dt_util.utcnow() - timedelta(days=20)
+    old_hours = [
+        old.replace(minute=0, second=0, microsecond=0) + timedelta(hours=i)
+        for i in range(3)
+    ]
+    monkeypatch.setattr(
+        history_mod,
+        "statistics_during_period",
+        lambda _hass, _s, _e, ids, _p, _u, _t: {
+            world["sensor"]: [
+                {"start": h.timestamp(), "mean": 15.0 + i} for i, h in enumerate(old_hours)
+            ]
+        },
+    )
+
+    client = await hass_client()
+    start = _iso(dt_util.utcnow() - timedelta(days=30))
+    end = _iso(dt_util.utcnow() + timedelta(minutes=5))
+    resp = await client.post(
+        "/api/i3x/v1/objects/history",
+        json={"elementIds": [world["sensor"]], "startTime": start, "endTime": end},
+    )
+    values = (await resp.json())["results"][0]["result"]["values"]
+    assert [v["value"] for v in values[:3]] == [15.0, 16.0, 17.0]
+    stamps = [v["timestamp"] for v in values]
+    assert stamps == sorted(stamps)
+    # Recorder-era points (the world fixture's 21.5) follow the LTS ones.
+    assert any(v["value"] == 21.5 for v in values[3:])
+
+
 async def test_objects_value_unavailable(world, hass, hass_client) -> None:
     hass.states.async_set(
         world["sensor"],
