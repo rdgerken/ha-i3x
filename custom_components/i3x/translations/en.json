@@ -42,7 +42,7 @@
       "cannot_connect": "Could not reach the i3X server. Check the base URL.",
       "invalid_auth": "The i3X server rejected the credentials.",
       "auth_incomplete": "Fill in the credentials matching the chosen authentication type.",
-      "unknown": "Unexpected error — check the logs."
+      "unknown": "Unexpected error. Check the logs."
     },
     "abort": {
       "already_configured": "This i3X server or connection is already configured. Adjust it via the integration's options."
