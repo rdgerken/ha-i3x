@@ -138,6 +138,14 @@ def create_entry(token: str) -> None:
             time.sleep(2)
     if flow is None:
         raise SystemExit("config_entries flow API never became available")
+    if flow.get("type") == "menu":
+        # v0.3+: the flow opens with a server/client menu.
+        flow = request(
+            "POST",
+            f"/api/config/config_entries/flow/{flow['flow_id']}",
+            {"next_step_id": "server"},
+            token=token,
+        )
     result = request(
         "POST",
         f"/api/config/config_entries/flow/{flow['flow_id']}",
