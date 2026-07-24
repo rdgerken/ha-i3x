@@ -10,7 +10,9 @@
           "include_domains": "Include domains (empty = all)",
           "include_entity_globs": "Include entity globs",
           "exclude_entity_globs": "Exclude entity globs",
-          "subscription_ttl": "Subscription idle timeout (seconds)"
+          "subscription_ttl": "Subscription idle timeout (seconds)",
+          "write_enabled": "Allow value-changing writes (echo/no-op writes are always accepted)",
+          "write_entity_globs": "Writable entity globs (allowlist for value-changing writes)"
         }
       }
     },
@@ -28,7 +30,9 @@
           "include_domains": "Include domains (empty = all)",
           "include_entity_globs": "Include entity globs",
           "exclude_entity_globs": "Exclude entity globs",
-          "subscription_ttl": "Subscription idle timeout (seconds)"
+          "subscription_ttl": "Subscription idle timeout (seconds)",
+          "write_enabled": "Allow value-changing writes (echo/no-op writes are always accepted)",
+          "write_entity_globs": "Writable entity globs (allowlist for value-changing writes)"
         }
       }
     }

@@ -27,6 +27,8 @@ from .const import (
     CONF_MODE,
     CONF_SERVER_NAME,
     CONF_SUBSCRIPTION_TTL,
+    CONF_WRITE_ENABLED,
+    CONF_WRITE_ENTITY_GLOBS,
     DEFAULT_LOCAL_ONLY,
     DEFAULT_SERVER_NAME,
     DEFAULT_SUBSCRIPTION_TTL,
@@ -63,6 +65,14 @@ def _server_options_schema(options: dict) -> vol.Schema:
                 CONF_SUBSCRIPTION_TTL,
                 default=options.get(CONF_SUBSCRIPTION_TTL, DEFAULT_SUBSCRIPTION_TTL),
             ): vol.All(int, vol.Range(min=60, max=86400)),
+            vol.Required(
+                CONF_WRITE_ENABLED,
+                default=options.get(CONF_WRITE_ENABLED, False),
+            ): BooleanSelector(),
+            vol.Optional(
+                CONF_WRITE_ENTITY_GLOBS,
+                default=options.get(CONF_WRITE_ENTITY_GLOBS, []),
+            ): multi_text,
         }
     )
 

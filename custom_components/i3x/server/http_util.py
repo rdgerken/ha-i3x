@@ -79,6 +79,20 @@ def require_id_list(body: Any, field: str = "elementIds") -> list[str]:
     return ids
 
 
+def require_updates_list(body: Any) -> list:
+    """Validate a PUT updates list: present, a list, within the cap."""
+    if not isinstance(body, dict) or not isinstance(body.get("updates"), list):
+        raise ProblemError(400, "Bad Request", "updates array is required")
+    updates = body["updates"]
+    if len(updates) > MAX_BULK_IDS:
+        raise ProblemError(
+            400,
+            "Bad Request",
+            f"updates exceeds the server limit of {MAX_BULK_IDS} entries per request",
+        )
+    return updates
+
+
 async def parse_json_body(request: web.Request) -> dict:
     """Parse the request body as a JSON object (empty body → {})."""
     if request.content_length in (None, 0):

@@ -50,6 +50,14 @@ jobs:
                 - name: "CI Temperature"
                   unit_of_measurement: "°C"
                   state: "{{ 21.5 }}"
+          light:
+            - platform: template
+              lights:
+                ci_light:
+                  friendly_name: "CI Light"
+                  turn_on: []
+                  turn_off: []
+                  set_level: []
           EOF
       - name: Start Home Assistant
         run: |
@@ -76,7 +84,7 @@ jobs:
         run: |
           node i3x-spec/conformance-tests/bin/i3x-test.js run \
             http://127.0.0.1:8123/api/i3x/v1 \
-            --token "$HA_TOKEN" --no-writes --json report.json
+            --token "$HA_TOKEN" --json report.json
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@v4

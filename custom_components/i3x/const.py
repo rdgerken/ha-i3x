@@ -44,6 +44,10 @@ MAX_QUEUED_BATCHES = 1000  # per-subscription; oldest dropped beyond -> 206
 MAX_HISTORY_ROWS = 100_000  # total rows per history request -> 206 if truncated
 SUBSCRIPTION_JANITOR_INTERVAL = 60  # seconds
 
+# SSE streaming
+MAX_SSE_STREAMS = 10  # concurrent streams across all subscriptions -> 503 beyond
+SSE_HEARTBEAT_SECONDS = 15  # keep-alive comment cadence (survives proxy idle timeouts)
+
 # /info rate limit for non-local clients (only relevant when local_only is off).
 INFO_RATE_PER_MINUTE = 30
 INFO_RATE_BURST = 60

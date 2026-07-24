@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entityfilter import generate_filter
 
 from ..const import (
     CONF_LOCAL_ONLY,
     CONF_SERVER_NAME,
     CONF_SUBSCRIPTION_TTL,
+    CONF_WRITE_ENABLED,
+    CONF_WRITE_ENTITY_GLOBS,
     DEFAULT_LOCAL_ONLY,
     DEFAULT_SERVER_NAME,
     DEFAULT_SUBSCRIPTION_TTL,
@@ -45,13 +48,36 @@ class I3xServer:
             CONF_SUBSCRIPTION_TTL, DEFAULT_SUBSCRIPTION_TTL
         )
 
+    @property
+    def write_enabled(self) -> bool:
+        return self.entry.options.get(CONF_WRITE_ENABLED, False)
+
+    @property
+    def write_filter(self):
+        globs = self.entry.options.get(CONF_WRITE_ENTITY_GLOBS, [])
+        return generate_filter(
+            include_domains=[],
+            include_entities=[],
+            exclude_domains=[],
+            exclude_entities=[],
+            include_entity_globs=globs,
+            exclude_entity_globs=[],
+        )
+
     # ---------------------------------------------------------------- info
     def capabilities(self) -> dict:
-        """Honest capability matrix — computed from what actually works."""
+        """Capability matrix.
+
+        update.* are always declared: idempotent echo writes (which change
+        nothing) are always accepted, so the endpoints genuinely work; value-
+        changing writes are additionally gated per-entity by the write
+        allowlist and report per-item failures, which the bulk contract
+        allows.
+        """
         return {
             "query": {"history": True},
-            "update": {"current": False, "history": False},
-            "subscribe": {"stream": False},
+            "update": {"current": True, "history": True},
+            "subscribe": {"stream": True},
         }
 
     def info_payload(self) -> dict:

@@ -166,14 +166,91 @@ async def test_cross_client_scoping(world, hass, hass_client) -> None:
     assert resp.status == 400
 
 
-async def test_stream_not_implemented(world, hass, hass_client) -> None:
+async def _read_data_frame(resp, timeout=5.0):
+    """Read SSE lines until a data: frame arrives; return its parsed JSON."""
+    import asyncio
+    import json
+
+    while True:
+        line = await asyncio.wait_for(resp.content.readline(), timeout)
+        if line.startswith(b"data: "):
+            return json.loads(line[6:].decode())
+
+
+async def test_stream_delivers_updates(world, hass, hass_client) -> None:
+    import asyncio
+
     client = await hass_client()
     sub_id = await _create(client)
+    await client.post(
+        "/api/i3x/v1/subscriptions/register",
+        json={
+            "clientId": CLIENT,
+            "subscriptionId": sub_id,
+            "elementIds": [world["sensor"]],
+        },
+    )
+
     resp = await client.post(
         "/api/i3x/v1/subscriptions/stream",
         json={"clientId": CLIENT, "subscriptionId": sub_id},
     )
-    assert resp.status == 501
+    assert resp.status == 200
+    assert resp.headers["Content-Type"].startswith("text/event-stream")
+
+    # Sync while the stream is open must be refused.
+    sync = await client.post(
+        "/api/i3x/v1/subscriptions/sync",
+        json={"clientId": CLIENT, "subscriptionId": sub_id},
+    )
+    assert sync.status == 400
+
+    hass.states.async_set(
+        world["sensor"],
+        "25.5",
+        {"unit_of_measurement": "°C", "device_class": "temperature"},
+    )
+    await hass.async_block_till_done()
+
+    updates = await _read_data_frame(resp)
+    assert isinstance(updates, list)
+    assert updates[0]["elementId"] == world["sensor"]
+    assert updates[0]["value"] == 25.5
+    assert updates[0]["quality"] == "Good"
+    resp.close()
+    await asyncio.sleep(0)
+
+
+async def test_stream_takeover_closes_previous(world, hass, hass_client) -> None:
+    import asyncio
+
+    client = await hass_client()
+    sub_id = await _create(client)
+
+    resp_a = await client.post(
+        "/api/i3x/v1/subscriptions/stream",
+        json={"clientId": CLIENT, "subscriptionId": sub_id},
+    )
+    assert resp_a.status == 200
+
+    resp_b = await client.post(
+        "/api/i3x/v1/subscriptions/stream",
+        json={"clientId": CLIENT, "subscriptionId": sub_id},
+    )
+    assert resp_b.status == 200
+
+    # Stream A must end cleanly (EOF, not an error) once B opens.
+    remainder = await asyncio.wait_for(resp_a.content.read(), 10)
+    assert isinstance(remainder, bytes)
+    resp_b.close()
+    await asyncio.sleep(0)
+
+    # Wrong client on stream → 404 problem, not a stream.
+    resp = await client.post(
+        "/api/i3x/v1/subscriptions/stream",
+        json={"clientId": "someone-else", "subscriptionId": sub_id},
+    )
+    assert resp.status == 404
 
 
 async def test_ttl_expiry(world, hass, hass_client) -> None:

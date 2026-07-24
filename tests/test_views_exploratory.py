@@ -16,8 +16,8 @@ async def test_info_unauthenticated(world, hass, hass_client_no_auth) -> None:
     assert info["serverName"] == "Home Assistant i3X"
     caps = info["capabilities"]
     assert caps["query"] == {"history": True}
-    assert caps["update"] == {"current": False, "history": False}
-    assert caps["subscribe"] == {"stream": False}
+    assert caps["update"] == {"current": True, "history": True}
+    assert caps["subscribe"] == {"stream": True}
 
 
 async def test_data_endpoints_require_auth(world, hass, hass_client_no_auth) -> None:

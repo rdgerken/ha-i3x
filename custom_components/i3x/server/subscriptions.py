@@ -12,6 +12,7 @@ wrong clientId is indistinguishable from a nonexistent one (404).
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 import time
 from collections import deque
@@ -25,12 +26,20 @@ from homeassistant.helpers.event import async_track_time_interval
 from ..const import (
     MAX_MONITORED_PER_SUBSCRIPTION,
     MAX_QUEUED_BATCHES,
+    MAX_SSE_STREAMS,
     MAX_SUBSCRIPTIONS_PER_CLIENT,
     MAX_SUBSCRIPTIONS_TOTAL,
     SUBSCRIPTION_JANITOR_INTERVAL,
 )
 from .http_util import ProblemError, item_not_found, item_ok, item_problem
 from .values import no_data_vqt, state_to_vqt
+
+
+class StreamHandle:
+    """Identity + close signal for one active SSE stream."""
+
+    def __init__(self) -> None:
+        self.close_event = asyncio.Event()
 
 
 @dataclass
@@ -45,7 +54,12 @@ class Subscription:
     next_seq: int = 1
     overflow: bool = False
     last_activity: float = field(default_factory=time.monotonic)
-    stream_active: bool = False
+    stream: StreamHandle | None = None
+    data_event: asyncio.Event = field(default_factory=asyncio.Event)
+
+    @property
+    def stream_active(self) -> bool:
+        return self.stream is not None
 
     def touch(self) -> None:
         self.last_activity = time.monotonic()
@@ -97,6 +111,9 @@ class SubscriptionManager:
         sub = self._subs.pop(sub_id, None)
         if sub is None:
             return
+        if sub.stream is not None:
+            sub.stream.close_event.set()
+            sub.stream = None
         for element_id in sub.monitored:
             watchers = self._watchers.get(element_id)
             if watchers:
@@ -131,6 +148,7 @@ class SubscriptionManager:
             sub.overflow = True
         sub.queue.append({"sequenceNumber": sub.next_seq, "updates": updates})
         sub.next_seq += 1
+        sub.data_event.set()
 
     def _snapshot_batch(self, sub: Subscription) -> None:
         """Stage the monitored objects' current values as one batch."""
@@ -308,6 +326,38 @@ class SubscriptionManager:
         overflowed = sub.overflow
         sub.overflow = False
         return list(sub.queue), overflowed
+
+    # ------------------------------------------------------------- streaming
+    def stream_open(self, client_id: str, sub_id) -> tuple[Subscription, StreamHandle]:
+        """Validate scoping and take over the subscription's stream slot."""
+        sub = self._owned(client_id, sub_id)
+        active = sum(1 for s in self._subs.values() if s.stream is not None)
+        if sub.stream is None and active >= MAX_SSE_STREAMS:
+            raise ProblemError(
+                503, "Service Unavailable", "Too many concurrent SSE streams"
+            )
+        if sub.stream is not None:
+            # Single stream per subscription: the previous stream must end
+            # cleanly when a new one opens (spec rule).
+            sub.stream.close_event.set()
+        handle = StreamHandle()
+        sub.stream = handle
+        return sub, handle
+
+    def stream_close(self, sub_id: str, handle: StreamHandle) -> None:
+        sub = self._subs.get(sub_id)
+        if sub is not None and sub.stream is handle:
+            sub.stream = None
+            sub.touch()
+
+    @staticmethod
+    def drain(sub: Subscription) -> list[dict]:
+        """Take all queued batches (at-most-once delivery for streaming)."""
+        batches = list(sub.queue)
+        sub.queue.clear()
+        sub.overflow = False
+        sub.data_event.clear()
+        return batches
 
     @property
     def count(self) -> int:

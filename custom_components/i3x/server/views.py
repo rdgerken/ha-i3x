@@ -9,6 +9,8 @@ negotiation apply uniformly.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from typing import Any
 
@@ -18,7 +20,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from ..const import API_BASE, DOMAIN
+from ..const import API_BASE, DOMAIN, SSE_HEARTBEAT_SECONDS
 from .http_util import (
     ProblemError,
     bulk_body,
@@ -28,6 +30,7 @@ from .http_util import (
     parse_json_body,
     problem_body,
     require_id_list,
+    require_updates_list,
 )
 from .model import namespaces
 from .values import no_data_vqt, state_to_vqt
@@ -293,9 +296,18 @@ class I3xObjectsValueView(_I3xBaseView):
 
     async def put(self, request: web.Request) -> web.Response:
         async def handler(engine, request):
-            raise self._not_implemented(
-                "This server does not support current value updates"
+            from .writes import write_values
+
+            body = await parse_json_body(request)
+            updates = require_updates_list(body)
+            results = await write_values(
+                self.hass,
+                engine.model.snapshot(),
+                updates,
+                engine.write_enabled,
+                engine.write_filter,
             )
+            return self.json(bulk_body(results))
 
         return await self._run(request, handler)
 
@@ -335,9 +347,14 @@ class I3xObjectsHistoryView(_I3xBaseView):
 
     async def put(self, request: web.Request) -> web.Response:
         async def handler(engine, request):
-            raise self._not_implemented(
-                "This server does not support historical value updates"
+            from .writes import write_history
+
+            body = await parse_json_body(request)
+            updates = require_updates_list(body)
+            results = await write_history(
+                self.hass, engine.model.snapshot(), updates
             )
+            return self.json(bulk_body(results))
 
         return await self._run(request, handler)
 
@@ -479,13 +496,58 @@ class I3xSubscriptionsStreamView(_I3xBaseView):
     url = f"{API_BASE}/subscriptions/stream"
     name = "api:i3x:subscriptions:stream"
 
-    async def post(self, request: web.Request) -> web.Response:
-        async def handler(engine, request):
-            raise self._not_implemented(
-                "This server does not support SSE streaming; use /subscriptions/sync"
+    async def post(self, request: web.Request) -> web.StreamResponse:
+        # Validation errors go through the normal problem path; once the
+        # stream opens, the response is raw SSE (deliberately uncompressed).
+        try:
+            engine = self._engine()
+            check_local_only(request, engine.local_only)
+            body = await parse_json_body(request)
+            client_id = self._client_id(body)
+            sub_id = body.get("subscriptionId")
+            if not isinstance(sub_id, str) or not sub_id:
+                raise ProblemError(400, "Bad Request", "subscriptionId is required")
+            sub, handle = engine.subscriptions.stream_open(client_id, sub_id)
+        except ProblemError as err:
+            return self.json(
+                problem_body(err.status, err.title, err.detail),
+                status_code=err.status,
             )
 
-        return await self._run(request, handler)
+        response = web.StreamResponse()
+        response.headers["Content-Type"] = "text/event-stream"
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["X-Accel-Buffering"] = "no"
+        await response.prepare(request)
+        try:
+            while not handle.close_event.is_set():
+                if request.transport is None or request.transport.is_closing():
+                    break
+                # At-most-once: drain and send everything queued right now.
+                for batch in engine.subscriptions.drain(sub):
+                    payload = json.dumps(batch["updates"])
+                    await response.write(f"data: {payload}\n\n".encode())
+                sub.touch()
+                waiters = [
+                    asyncio.ensure_future(handle.close_event.wait()),
+                    asyncio.ensure_future(sub.data_event.wait()),
+                ]
+                done, pending = await asyncio.wait(
+                    waiters,
+                    timeout=SSE_HEARTBEAT_SECONDS,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for task in pending:
+                    task.cancel()
+                if not done:
+                    await response.write(b": keep-alive\n\n")
+            # Clean end-of-stream (takeover, deletion, or shutdown).
+            await response.write_eof()
+        except (ConnectionResetError, ConnectionError, OSError):
+            pass  # client went away
+        finally:
+            engine.subscriptions.stream_close(sub_id, handle)
+        return response
 
 
 ALL_VIEWS = (
