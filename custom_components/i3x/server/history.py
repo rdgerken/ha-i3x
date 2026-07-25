@@ -27,7 +27,7 @@ from homeassistant.util import dt as dt_util
 from ..const import MAX_HISTORY_ROWS, QUALITY_GOOD
 from .http_util import item_not_found, item_ok
 from .model import AddressSpace, I3xObject
-from .schemas import KIND_NUMERIC
+from .schemas import KIND_NUMERIC, KIND_STRUCTURED
 from .values import iso_z, state_to_vqt
 
 
@@ -56,11 +56,30 @@ async def fetch_history(
                 if child.entity_id is not None:
                     involved[child.entity_id] = child
 
+    # Entities whose value includes attributes need attribute-only changes:
+    # HA's significant-changes filter drops them for every domain outside
+    # recorder SIGNIFICANT_DOMAINS, which would silently lose (for example)
+    # every brightness change on a light that stayed on. For scalar entities
+    # the state IS the value, so attribute-only rows are pure duplicates and
+    # the filter stays on.
     entity_ids = list(involved)
+    structured_ids = [
+        eid
+        for eid, obj in involved.items()
+        if obj.typing is not None and obj.typing.kind == KIND_STRUCTURED
+    ]
+    structured_set = set(structured_ids)
+    scalar_ids = [eid for eid in entity_ids if eid not in structured_set]
+
     states_map: dict[str, list] = {}
-    if entity_ids:
-        states_map = await get_instance(hass).async_add_executor_job(
-            _blocking_history, hass, start, end, entity_ids
+    recorder = get_instance(hass)
+    for ids, significant_only in ((scalar_ids, True), (structured_ids, False)):
+        if not ids:
+            continue
+        states_map.update(
+            await recorder.async_add_executor_job(
+                _blocking_history, hass, start, end, ids, significant_only
+            )
         )
 
     # Long-term statistics backfill for numeric entities whose recorder data
@@ -160,7 +179,11 @@ class _RowCounter:
 
 
 def _blocking_history(
-    hass: HomeAssistant, start: datetime, end: datetime, entity_ids: list[str]
+    hass: HomeAssistant,
+    start: datetime,
+    end: datetime,
+    entity_ids: list[str],
+    significant_changes_only: bool = True,
 ) -> dict[str, list]:
     """Run inside the recorder executor."""
     return history.get_significant_states(
@@ -169,7 +192,7 @@ def _blocking_history(
         end,
         entity_ids,
         include_start_time_state=False,
-        significant_changes_only=True,
+        significant_changes_only=significant_changes_only,
         minimal_response=False,
         no_attributes=False,
     )

@@ -431,3 +431,40 @@ async def test_put_history_idempotent_only(world, hass, hass_client) -> None:
     body = await resp.json()
     assert body["results"][0]["success"] is False
     assert body["results"][0]["responseDetail"]["status"] == 400
+
+
+async def test_attribute_only_changes_are_kept(world, hass, hass_client) -> None:
+    """Structured entities must not lose attribute-only history points.
+
+    HA's significant-changes filter drops rows where only attributes changed
+    for every domain outside recorder SIGNIFICANT_DOMAINS, which silently lost
+    every brightness change on a light that stayed on.
+    """
+    from pytest_homeassistant_custom_component.components.recorder.common import (
+        async_wait_recording_done,
+    )
+
+    from custom_components.i3x.const import DOMAIN
+
+    for level in (10, 60, 120, 200, 255):
+        hass.states.async_set("light.dimmer", "on", {"brightness": level})
+        await hass.async_block_till_done()
+    await async_wait_recording_done(hass)
+    hass.data[DOMAIN]["server"].model.invalidate()
+
+    start = _iso(dt_util.utcnow() - timedelta(hours=1))
+    end = _iso(dt_util.utcnow() + timedelta(minutes=5))
+    client = await hass_client()
+    resp = await client.post(
+        "/api/i3x/v1/objects/history",
+        json={"elementIds": ["light.dimmer"], "startTime": start, "endTime": end},
+    )
+    values = (await resp.json())["results"][0]["result"]["values"]
+    brightness = [
+        v["value"].get("brightness")
+        for v in values
+        if isinstance(v.get("value"), dict)
+    ]
+    assert sorted(set(b for b in brightness if b is not None)) == [
+        10.0, 60.0, 120.0, 200.0, 255.0
+    ], values
